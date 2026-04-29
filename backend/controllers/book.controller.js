@@ -1,16 +1,14 @@
 const db = require('../config/db');
+const { uploadToCloudinary } = require('../config/cloudinary');
 
-// GET /api/books  — livres approuvés (public)
+// GET /api/books
 exports.getAll = async (req, res, next) => {
   try {
     const { search, category, city, library_id, page = 1, limit = 12 } = req.query;
     let where = ['b.status = "approved"'];
     const params = [];
 
-    if (search) {
-      where.push('MATCH(b.title, b.author) AGAINST(? IN BOOLEAN MODE)');
-      params.push(`${search}*`);
-    }
+    if (search)     { where.push('MATCH(b.title, b.author) AGAINST(? IN BOOLEAN MODE)'); params.push(`${search}*`); }
     if (category)   { where.push('b.category_id = ?');  params.push(category); }
     if (library_id) { where.push('b.library_id = ?');   params.push(library_id); }
     if (city)       { where.push('l.city = ?');          params.push(city); }
@@ -28,7 +26,9 @@ exports.getAll = async (req, res, next) => {
 
     const [books] = await db.query(sql, params);
     const [[{ total }]] = await db.query(
-      `SELECT COUNT(*) AS total FROM books b LEFT JOIN libraries l ON b.library_id = l.id WHERE ${where.join(' AND ')}`,
+      `SELECT COUNT(*) AS total FROM books b
+       LEFT JOIN libraries l ON b.library_id = l.id
+       WHERE ${where.join(' AND ')}`,
       params.slice(0, -2)
     );
     res.json({ success: true, books, total, page: Number(page), limit: Number(limit) });
@@ -53,16 +53,26 @@ exports.getOne = async (req, res, next) => {
   } catch (err) { next(err); }
 };
 
-// POST /api/books  — bibliothèque crée un livre
+// POST /api/books
 exports.create = async (req, res, next) => {
   try {
     const { library_id, category_id, title, author, description, isbn, quantity } = req.body;
-    const cover_image = req.file?.path || null;
+
+    // Upload image si présente
+    let cover_image = null;
+    if (req.file) {
+      cover_image = await uploadToCloudinary(req.file.buffer, 'bibliotheque/books');
+    }
+
     const [result] = await db.query(
-      'INSERT INTO books (library_id,category_id,title,author,description,cover_image,isbn,quantity) VALUES (?,?,?,?,?,?,?,?)',
+      'INSERT INTO books (library_id, category_id, title, author, description, cover_image, isbn, quantity) VALUES (?,?,?,?,?,?,?,?)',
       [library_id, category_id, title, author, description, cover_image, isbn, quantity || 1]
     );
-    res.status(201).json({ success: true, message: 'Livre soumis pour validation', bookId: result.insertId });
+    res.status(201).json({
+      success: true,
+      message: 'Livre soumis pour validation',
+      bookId: result.insertId
+    });
   } catch (err) { next(err); }
 };
 
@@ -70,11 +80,19 @@ exports.create = async (req, res, next) => {
 exports.update = async (req, res, next) => {
   try {
     const { title, author, description, category_id, isbn, quantity } = req.body;
-    const cover_image = req.file?.path;
+
+    // Upload image si présente
+    let cover_image = null;
+    if (req.file) {
+      cover_image = await uploadToCloudinary(req.file.buffer, 'bibliotheque/books');
+    }
+
     const fields = { title, author, description, category_id, isbn, quantity };
     if (cover_image) fields.cover_image = cover_image;
+
     const sets   = Object.keys(fields).map(k => `${k} = ?`).join(', ');
     const values = [...Object.values(fields), req.params.id];
+
     await db.query(`UPDATE books SET ${sets} WHERE id = ?`, values);
     res.json({ success: true, message: 'Livre mis à jour' });
   } catch (err) { next(err); }
@@ -88,7 +106,7 @@ exports.remove = async (req, res, next) => {
   } catch (err) { next(err); }
 };
 
-// GET /api/books/library/:libraryId  — tous les livres d'une bibliothèque
+// GET /api/books/library/:libraryId
 exports.getByLibrary = async (req, res, next) => {
   try {
     const [books] = await db.query(

@@ -1,4 +1,5 @@
 const db = require('../config/db');
+const { uploadToCloudinary } = require('../config/cloudinary');
 
 // GET /api/libraries  — bibliothèques approuvées
 exports.getAll = async (req, res, next) => {
@@ -37,12 +38,22 @@ exports.getOne = async (req, res, next) => {
 exports.create = async (req, res, next) => {
   try {
     const { library_name, address, city, description } = req.body;
-    const image = req.file?.path || null;
+
+    // Upload image si présente
+    let image = null;
+    if (req.file) {
+      image = await uploadToCloudinary(req.file.buffer, 'bibliotheque/profiles');
+    }
+
     const [result] = await db.query(
-      'INSERT INTO libraries (user_id,library_name,address,city,description,image) VALUES (?,?,?,?,?,?)',
+      'INSERT INTO libraries (user_id, library_name, address, city, description, image) VALUES (?,?,?,?,?,?)',
       [req.user.id, library_name, address, city, description, image]
     );
-    res.status(201).json({ success: true, libraryId: result.insertId, message: 'Bibliothèque soumise pour validation' });
+    res.status(201).json({
+      success: true,
+      libraryId: result.insertId,
+      message: 'Bibliothèque soumise pour validation'
+    });
   } catch (err) { next(err); }
 };
 
@@ -50,11 +61,19 @@ exports.create = async (req, res, next) => {
 exports.update = async (req, res, next) => {
   try {
     const { library_name, address, city, description } = req.body;
-    const image = req.file?.path;
+
+    // Upload image si présente
+    let image = null;
+    if (req.file) {
+      image = await uploadToCloudinary(req.file.buffer, 'bibliotheque/profiles');
+    }
+
     const fields = { library_name, address, city, description };
     if (image) fields.image = image;
+
     const sets   = Object.keys(fields).map(k => `${k} = ?`).join(', ');
     const values = [...Object.values(fields), req.params.id];
+
     await db.query(`UPDATE libraries SET ${sets} WHERE id = ?`, values);
     res.json({ success: true, message: 'Bibliothèque mise à jour' });
   } catch (err) { next(err); }
@@ -68,7 +87,7 @@ exports.remove = async (req, res, next) => {
   } catch (err) { next(err); }
 };
 
-// GET /api/libraries/mine — profil de la bibliothèque connectée
+// GET /api/libraries/mine
 exports.getMine = async (req, res, next) => {
   try {
     const [rows] = await db.query(

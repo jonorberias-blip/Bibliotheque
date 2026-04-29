@@ -1,6 +1,5 @@
-const cloudinary  = require('cloudinary').v2;
-const { CloudinaryStorage } = require('multer-storage-cloudinary');
-const multer = require('multer');
+const cloudinary = require('cloudinary').v2;
+const multer     = require('multer');
 
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
@@ -8,27 +7,19 @@ cloudinary.config({
   api_secret: process.env.CLOUDINARY_API_SECRET,
 });
 
-// Stockage pour les couvertures de livres
-const bookStorage = new CloudinaryStorage({
-  cloudinary,
-  params: {
-    folder:         'bibliotheque/books',
-    allowed_formats: ['jpg', 'jpeg', 'png', 'webp'],
-    transformation:  [{ width: 400, height: 550, crop: 'fill' }],
-  },
-});
+const uploadBook    = multer({ storage: multer.memoryStorage() });
+const uploadProfile = multer({ storage: multer.memoryStorage() });
 
-// Stockage pour les avatars / images de bibliothèque
-const profileStorage = new CloudinaryStorage({
-  cloudinary,
-  params: {
-    folder:          'bibliotheque/profiles',
-    allowed_formats: ['jpg', 'jpeg', 'png', 'webp'],
-    transformation:  [{ width: 400, height: 400, crop: 'fill' }],
-  },
-});
+const uploadToCloudinary = (buffer, folder) => {
+  return new Promise((resolve, reject) => {
+    cloudinary.uploader.upload_stream(
+      { folder },
+      (error, result) => {
+        if (error) reject(error);
+        else resolve(result.secure_url);
+      }
+    ).end(buffer);
+  });
+};
 
-const uploadBook    = multer({ storage: bookStorage });
-const uploadProfile = multer({ storage: profileStorage });
-
-module.exports = { cloudinary, uploadBook, uploadProfile };
+module.exports = { cloudinary, uploadBook, uploadProfile, uploadToCloudinary };
